@@ -1,0 +1,10 @@
+import { useState } from 'react'
+import { useMutation,useQueryClient } from '@tanstack/react-query'
+import type { WorkbenchState } from '../../../../shared/paper/workbench'
+import { invoke } from '../../lib/ipc'
+import Confirm from '../components/Confirm'
+export default function BackupPage({state}:{state?:WorkbenchState}):JSX.Element {
+  const [confirm,setConfirm]=useState(false),[notice,setNotice]=useState(''),client=useQueryClient()
+  const mutation=useMutation({mutationFn:({channel,format}:{channel:'paper:export'|'paper:restore';format?:string})=>invoke<{cancelled?:boolean;restartRequired?:boolean;saved?:boolean}>(channel,format?{format}:undefined),onMutate:()=>setNotice(''),onSuccess:async result=>{setConfirm(false);setNotice(result.cancelled?'已取消，未完成导出或恢复。':result.restartRequired?'恢复副本已校验并准备完成。原库及恢复前备份保留；请退出并重新启动应用。':'导出成功。');await client.invalidateQueries({queryKey:['paper-workbench']})}})
+  return <section className="wb-card"><h2>备份与恢复</h2><p>CSV 仅供查看成交，不能恢复；JSON / SQLite 包含完整账本，可用于恢复。请保管好导出文件。</p><div className="wb-row">{['csv','json','sqlite'].map(format=><button key={format} disabled={mutation.isPending||!state||state.service==='unavailable'||state.restorePending} onClick={()=>mutation.mutate({channel:'paper:export',format})}>导出 {format.toUpperCase()}</button>)}<button disabled={mutation.isPending||!state||state.service==='unavailable'||state.restorePending} onClick={()=>setConfirm(true)}>从 JSON / SQLite 恢复</button></div>{notice&&<p role="status">{notice}</p>}{state?.restorePending&&<p role="alert" className="wb-warning">恢复待重启：当前服务停止，不能继续操作旧实例。请退出并重新启动应用。</p>}{mutation.error&&<p role="alert" className="wb-error">操作未完成：{mutation.error.message}</p>}{confirm&&<Confirm title="选择备份并准备恢复" busy={mutation.isPending} onClose={()=>setConfirm(false)} onConfirm={()=>mutation.mutate({channel:'paper:restore'})}><p>选择文件后会暂停当前运行并校验完整备份。恢复在新副本上进行，保留原库与恢复前备份；成功后必须退出并重启。取消文件选择不会显示恢复成功。</p><p>确认后打开系统文件选择框。请先导出当前账本。</p>{mutation.error&&<p role="alert">{mutation.error.message}</p>}</Confirm>}</section>
+}

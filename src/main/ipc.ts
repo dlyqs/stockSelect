@@ -247,6 +247,7 @@ export function registerIpc(
     const result = keys.setKey(p.provider, p.key, p.allowPlaintext)
     if (!result.ok) throw new Error(result.error)
     if (p.provider === 'finnhub') stream.onKeyChanged()
+    if (p.provider === 'alpaca') paperUi.invalidateReadiness()
     return result
   })
   handle('keys:test', async (payload) => {
@@ -524,7 +525,9 @@ export function registerIpc(
 
   // --- pop-outs & link groups ---
   handle('panel:popout', (payload) => {
-    popouts.open(panelStateSchema.parse(payload))
+    const panel = panelStateSchema.parse(payload)
+    if (panel.fn === 'PAPER') throw new Error('PAPER_MAIN_WINDOW_ONLY')
+    popouts.open(panel)
     return true
   })
   handle('popout:init', (_payload, senderId) => popouts.getPanel(senderId))
@@ -905,6 +908,6 @@ export function registerIpc(
   handle('app:version', () => app.getVersion())
 
   const paper=createPaperRuntime(() => keys.getKey('alpaca'))
-  registerPaperIpc(handle,paper,()=>keys.getKey('alpaca'))
+  const paperUi = registerPaperIpc(handle,paper,()=>keys.getKey('alpaca'))
   return { stream, paper }
 }

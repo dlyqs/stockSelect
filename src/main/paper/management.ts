@@ -1,23 +1,29 @@
 import { randomUUID } from 'node:crypto'
 import { actionSchema } from '../../shared/paper/management'
 import type { PaperState } from '../../shared/paper/management'
-import { strategyVersions, parametersFor } from '../../strategies/registry'
+import { strategyVersions, parametersFor, templateFor } from '../../strategies/registry'
 import type { PaperTradingService } from './service'
 import { sessionAt } from './calendar'
 export class PaperManagement {
   constructor(private service: PaperTradingService, private validate: (symbol:string)=>Promise<void>) {}
   state(): PaperState {
     const r=this.service.repository
-    return {runs:r.listRuns(),instruments:r.instruments(),templates:strategyVersions.map(v=>({id:v.id,kind:v.kind,parameters:parametersFor(v.kind,{})})),valuations:Object.fromEntries(r.listRuns().map(run=>[run.id,['ended','archived'].includes(run.status)?r.historyRows<import('../../shared/paper/management').Valuation>('equity_snapshots',run.id,0,Number.MAX_SAFE_INTEGER,0,-1).rows.at(-1) ?? r.valuation(run.id,Date.now()):r.valuation(run.id,Date.now())])),halted:this.service.halted}
+    return {runs:r.listRuns(),instruments:r.instruments(),templates:strategyVersions.map(v=>({id:v.id,kind:v.kind,parameters:parametersFor(v.kind,{})})),valuations:Object.fromEntries(r.listRuns().map(run=>[run.id,['ended','archived'].includes(run.status)?r.latestSnapshot(run.id) ?? r.valuation(run.id,Date.now()):r.valuation(run.id,Date.now())])),halted:this.service.halted}
   }
-  async action(raw: unknown): Promise<void> {
+  async action(raw: unknown): Promise<void | { id: string }> {
     const input=actionSchema.parse(raw), r=this.service.repository
     if(this.service.halted) throw new Error('PAPER_SERVICE_HALTED')
     if (input.type==='add') { await this.validate(input.symbol); if(this.service.halted) throw new Error('PAPER_SERVICE_HALTED'); r.addInstrument(input.symbol,input.kind); return }
     if (input.type==='remove') { r.removeInstrument(input.symbol); return }
     if (input.type==='create') {
+      const normalized = {...input.config, parameters: parametersFor(templateFor(input.config.strategyVersion), input.config.parameters)}
+      const existing = input.requestId && r.listRuns().find(run => run.id === input.requestId)
+      if (existing) {
+        if (JSON.stringify(existing.config) !== JSON.stringify(normalized)) throw new Error('CREATE_REQUEST_CONFLICT')
+        return {id:existing.id}
+      }
       if (input.config.symbols.some(s=>!r.instruments().some(i=>i.symbol===s))) throw new Error('VALIDATE_INSTRUMENT_FIRST')
-      this.service.create(randomUUID(),input.config); return
+      const id = input.requestId ?? randomUUID(); this.service.create(id,normalized); return { id }
     }
     if (input.type==='corporate') {
       const affected=r.listRuns().filter(run=>run.config.symbols.includes(input.action.symbol) && !['ended','archived'].includes(run.status))
@@ -27,6 +33,8 @@ export class PaperManagement {
       return
     }
     const run=r.getRun(input.id)
+    if (['ended','archived'].includes(run.status) && ['start','pause','end'].includes(input.action)) throw new Error('RUN_TERMINAL')
+    if (input.action==='archive' && this.service.isLiquidating(input.id)) throw new Error('LIQUIDATION_PENDING')
     switch (input.action) {
       case 'start': await this.service.start(input.id); break
       case 'pause': this.service.pause(input.id); break

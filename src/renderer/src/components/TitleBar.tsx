@@ -5,7 +5,7 @@ import { IS_MAC } from '../lib/platform'
  * window's `titleBarStyle: 'hiddenInset'`, so we render no custom controls and
  * pad the brand text past the lights. Windows/Linux get custom min/max/close.
  */
-export default function TitleBar(): JSX.Element {
+export default function TitleBar({ onBack }: { onBack?: () => void } = {}): JSX.Element {
   return (
     <div className="drag-region flex h-8 shrink-0 items-center justify-between border-b border-term-border bg-term-panel px-3">
       <div
@@ -14,6 +14,7 @@ export default function TitleBar(): JSX.Element {
       >
         OpenTerminal
       </div>
+      {onBack && <button className="no-drag px-3 text-[12px] text-term-text" onClick={onBack}>← 返回模拟工作台</button>}
       {!IS_MAC && (
         <div className="no-drag flex items-center">
           <button

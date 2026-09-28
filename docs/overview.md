@@ -4,7 +4,7 @@
 
 ## 当前项目概况
 
-OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript、Zustand、React Query 和 lightweight-charts。主进程负责外部网络、凭证、服务和本地存储；renderer 通过受限 IPC 调用服务，不直接访问供应商或持有密钥。已新增独立模拟成交、SQLite 账本、raw IEX 采集与策略 worker，并接入应用生命周期。通过 PAPER 命令管理独立实例；受限 IPC 提供控制、分页历史、共同区间比较和导出/恢复。使用说明见 [paper-trading-guide.md](paper-trading-guide.md)。
+OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript、Zustand、React Query 和 lightweight-charts。主进程负责外部网络、凭证、服务和本地存储；renderer 通过受限 IPC 调用服务，不直接访问供应商或持有密钥。已新增独立模拟成交、SQLite 账本、raw IEX 采集与策略 worker，并接入应用生命周期。默认工作台已支持 Alpaca 配置、标的池、结构化创建、运行监控、详情控制、比较、核对与备份；高级终端 PAPER 为同一工作台的薄入口；受限 IPC 提供控制、分页历史、共同区间比较和导出/恢复。使用说明见 [paper-trading-guide.md](paper-trading-guide.md)。
 
 ## 文件组织与修改入口
 
@@ -27,7 +27,10 @@ OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript�
 | `src/renderer/src/panels/` | 功能面板；组合 `PortPanel`、筛选 `EqsPanel`、图表 `ChartPanel` |
 | `src/renderer/src/lib/live.ts` | renderer 内存行情缓存与组件订阅，依赖页面帧调度 |
 | `src/renderer/src/lib/indicators/` | 指标计算及测试；后续服务端复用宜抽出纯函数，不能依赖 renderer 生命周期 |
-| `src/renderer/src/state/workspace.ts` | 面板与工作区状态 |
+| `src/renderer/src/App.tsx` | 主窗口默认工作台入口与全局生命周期；原终端按需挂载 |
+| `src/renderer/src/components/PanelGrid.tsx`、`CommandLine.tsx` | 原终端面板分发、命令输入与多分屏交互 |
+| `src/renderer/src/PopoutApp.tsx` | 原终端弹出窗口，独立于主窗口布局持久化 |
+| `src/renderer/src/state/workspace.ts` | 面板与工作区状态；默认 HELP + EMPTY，保存过的工作区优先恢复 |
 | `src/main/exportService.ts` | 原生对话框和 CSV/JSON 导出 |
 
 ## 核心链路与当前限制
@@ -91,3 +94,18 @@ OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript�
 - macOS arm64 未签名 `.app` 已通过 electron-builder 本地打包；包内 Electron 31.7.7 / Node 20.18.0 / ABI 125 从 app.asar 加载 SQLite worker 的事务/回滚/重开探针通过。签名、公证、Windows/Linux 尚未验证。首次下载等待改为显式使用已安装 Electron distribution；具体命令见计划。
 - `paper:probe:market` 与新增 `paper:monitor:market -- 60 AAPL,SPY <evidence.jsonl>` 均返回未配置授权凭证。真实交易时段连续至少 60 分钟采集仍是 Phase 7 的必要阻塞项。用户实际最小化、休眠恢复及 UI 交互尚待人工操作，离线测试不替代这些证据。
 - 本轮用户授权自动完成 Phase 5–7；计划保留 auto_until / Phase 5–7，Phase 5–6 completed、Phase 7 blocked，补齐凭证及交易时段后继续该范围。唯一阶段状态来源为 [paper-trading-plan.md](paper-trading-plan.md)。
+
+
+## 默认工作台 UI（Phase 1–6 已实现）
+
+默认进入 `workbench/WorkbenchShell.tsx` 总览；高级终端由 `TerminalShell.tsx` 按需挂载，保留 workspace snapshot 和其他弹窗。Finnhub 向导只服务高级终端；PAPER 是工作台薄入口，不独立轮询、不支持弹窗。原 workspace 读取失败可重试，不覆盖保存布局。局部深色 tokens 不改旧终端样式。
+
+`paper:workbench` 提供服务、日历、采集与批量账户摘要，包括采样、创建时间、最近事件、核对及清仓状态。状态轮询每 8 秒，隐藏窗口不轮询。只读 IEX/assets 检查与保存分开，换凭证后旧结果失效。`paper:page` 为成交/净值/事件提供独立有界分页；详情使用纽约日期（包含 DST），按实例/类型/日期/页码隔离缓存。历史/比较按可见页面约 60 秒更新，完整历史绩效按账本 revision 缓存，初次或变更后仍按原账本完整计算；不以展示下采样计算收益。新增只读索引可兼容旧 v2 备份。
+
+三个策略模板的参数元数据和校验在 `shared/paper/templates.ts` 统一，算法不变。四步创建采用精确金额转换、版本化草稿和持久 requestId 幂等；创建不启动，可复制为新实例。`OverviewPage` 展示状态、净值、观察跨度与待处理；`DetailPage` 展示持仓、完整期绩效和独立分页；生命周期操作复用 `usePaperAction`，清仓/结束/归档先展示影响。主进程拒绝终止账户恢复、清仓中归档及恢复待重启后的写入。
+
+`ComparePage` 以真实共同起点净值归一，区分共同期收益与各实例完整期覆盖/样本；`DataPage` 以当前持仓人工核对公司行动，冻结确认请求并列出受影响实例；`BackupPage` 分开 CSV 查看与完整 JSON/SQLite 恢复，取消/失败/待重启状态明确。图表按纽约时间显示并断开旧价/缺失段。主进程运行不依赖页面挂载。
+
+最终 **33 个测试文件 / 231 项通过**，typecheck、lint、build、diff 检查和 Electron SQLite worker 的事务/回滚/重开探针通过。静态纯色文字对比度最小 6.39:1。当前原生依赖为 Electron 31.7.7 / ABI 125，Node 测试前需 `npm run paper:rebuild:node`。未启动页面；人工窗口尺寸、视觉、焦点、系统文件对话框与实际后台/恢复行为清单见使用指南。原交易计划 Phase 7 的真实 IEX 60 分钟采集仍 blocked。
+
+唯一 UI 阶段状态来源是 [paper-workbench-ui-plan.md](paper-workbench-ui-plan.md)。原对话 Phase 1–3 与接续对话 Phase 4–6 均已完成，计划恢复 manual。保留同一目录全部未提交改动，未创建 worktree/子代理，未提交推送，未使用 Playwright 或 GitNexus。

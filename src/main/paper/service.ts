@@ -18,6 +18,8 @@ export class PaperTradingService {
   private lastHeartbeat = 0
   private lastTick: number | undefined
   constructor(readonly repository: PaperRepository, readonly market: MarketDataService, private workers: StrategyExecutor = new StrategyWorkers(), private now = Date.now, private log: (event: string, fields: Record<string,unknown>) => void = () => {}) {}
+  get workbenchStatus(): 'suspended' | 'halted' | 'ready' { return this.halted ? 'halted' : this.suspended ? 'suspended' : 'ready' }
+  isLiquidating(id: string): boolean { return this.liquidating.has(id) }
   get halted(): boolean {return this.stopped || this.repository.halted}
   async initialize(): Promise<void> {
     for (const version of strategyVersions) this.repository.registerVersion(version.id,version.source,version.build,version.stateSchema)

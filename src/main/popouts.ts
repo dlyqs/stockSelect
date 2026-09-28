@@ -47,6 +47,8 @@ export class PopoutManager {
   ) {}
 
   open(panel: PanelState, savedBounds?: PopoutBounds): void {
+    // PAPER has no popout renderer; historical snapshots must not open blank windows.
+    if (panel.fn === 'PAPER') return
     const remembered = savedBounds ?? (this.boundsStore.get(String(panel.id)) as PopoutBounds | undefined)
     const bounds = clampBounds(remembered)
     const win = new BrowserWindow({

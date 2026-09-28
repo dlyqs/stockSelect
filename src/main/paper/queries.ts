@@ -4,7 +4,19 @@ import { historySchema } from '../../shared/paper/management'
 import { sessionAt } from './calendar'
 import { performance } from './performance'
 import type { PaperRepository } from './storage/repository'
+const historyCache=new WeakMap<PaperRepository,{revision:number;entries:Map<string,PaperHistory>}>()
 export function history(repo: PaperRepository, raw: unknown): PaperHistory {
+  const q=historySchema.parse(raw),revision=repo.readRevision(),key=JSON.stringify(q)
+  let cache=historyCache.get(repo)
+  if(!cache||cache.revision!==revision){cache={revision,entries:new Map()};historyCache.set(repo,cache)}
+  const cached=cache.entries.get(key)
+  if(cached)return cached
+  const result=calculateHistory(repo,q)
+  if(cache.entries.size>=32)cache.entries.delete(cache.entries.keys().next().value!)
+  cache.entries.set(key,result)
+  return result
+}
+function calculateHistory(repo: PaperRepository, raw: unknown): PaperHistory {
   const q=historySchema.parse(raw), run=repo.getRun(q.id)
   const fills=repo.historyRows<Fill>('fills',q.id,q.from,q.to,q.offset,q.limit)
   const snapshots=repo.historyRows<Valuation>('equity_snapshots',q.id,q.from,q.to,q.offset,q.limit)

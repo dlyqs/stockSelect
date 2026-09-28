@@ -4,7 +4,7 @@ import { AlpacaPaperSource } from './marketSource'
 import { MarketDataService } from './marketData'
 import { PaperTradingService } from './service'
 import { PaperScheduler } from './scheduler'
-export interface PaperRuntime { service: PaperTradingService; suspend(): void; resume(): void; shutdown(): Promise<void> }
+export interface PaperRuntime { service: PaperTradingService; readonly status: 'initializing' | 'ready' | 'suspended' | 'halted'; suspend(): void; resume(): void; shutdown(): Promise<void> }
 export function createPaperRuntime(getKey: () => string | null): PaperRuntime | null {
   let service: PaperTradingService | undefined
   let scheduler: PaperScheduler | undefined
@@ -17,9 +17,11 @@ export function createPaperRuntime(getKey: () => string | null): PaperRuntime | 
     scheduler = new PaperScheduler(() => current.tick(),() => log('scheduler_error',{}))
     let closing = false
     let suspended = false
-    const ready = current.initialize().then(() => { if (!closing && !suspended) scheduler!.start() }).catch(() => { current.halt(); log('initialization_failed',{}) })
+    let initialized = false
+    const ready = current.initialize().then(() => { initialized = true; if (!closing && !suspended) scheduler!.start() }).catch(() => { current.halt(); log('initialization_failed',{}) })
     return {
       service: current,
+      get status() { return current.halted ? 'halted' : !initialized ? 'initializing' : current.workbenchStatus },
       suspend: () => { suspended = true; scheduler!.stop(); current.suspend() },
       resume: () => { suspended = false; void ready.then(() => current.resume()).then(() => { if (!closing && !suspended) scheduler!.start() }).catch(() => log('resume_failed',{})) },
       shutdown: async () => {

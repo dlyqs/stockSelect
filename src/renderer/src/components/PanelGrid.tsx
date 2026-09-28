@@ -203,7 +203,7 @@ export default function PanelGrid(): JSX.Element {
               <span className="ml-1 text-term-text">{panel.fn === 'EMPTY' ? '—' : panel.fn}</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="font-mono text-[9px] uppercase text-term-dim">P{index + 1}</span>
+              <span className="font-mono text-[9px] uppercase text-term-dim">{panel.fn === 'PAPER' ? '在主窗口管理 · ' : ''}P{index + 1}</span>
               {panel.fn !== 'EMPTY' && (
                 <>
                   <button
@@ -218,6 +218,7 @@ export default function PanelGrid(): JSX.Element {
                   </button>
                   <button
                     className="px-1 font-mono text-[10px] text-term-dim hover:text-term-amber"
+                    hidden={panel.fn === 'PAPER'}
                     title="Pop out to its own window (Ctrl+Shift+P)"
                     onClick={(event) => {
                       event.stopPropagation()

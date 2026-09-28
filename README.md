@@ -214,8 +214,14 @@ Needs Node 22+ and git.
 git clone https://github.com/JamievanRiel/openterminal.git
 cd openterminal
 npm install
-npm run dev        # opens the app with hot reload
+npm run dev        # rebuilds native deps for Electron, then opens the app with hot reload
 ```
+
+With pnpm 10, this repository allows install scripts for `electron`, `esbuild`,
+and `better-sqlite3` through `pnpm.onlyBuiltDependencies`. If an earlier install
+skipped them and startup reports `Electron uninstall`, run `pnpm rebuild electron
+esbuild`, then `pnpm dev`. The dev command rebuilds native dependencies for the
+Electron runtime before launching, including after running SQLite tests under Node.
 
 For development you can copy `.env.example` to `.env`. Packaged builds never read it
 (guarded by `!app.isPackaged`).
@@ -232,7 +238,7 @@ synthesized by the script, so no third-party samples).
 
 ## Paper strategies
 
-Run `PAPER` for independent simulated US stock/ETF strategy accounts using Alpaca IEX. Includes frozen strategy versions, cash/positions, persisted history, common-period comparison, and consistent JSON/SQLite backup and restore. No live orders or notifications. See [the PAPER guide](docs/paper-trading-guide.md) for setup, costs, lifecycle limits, and validation status. Real-feed 60-minute acceptance is still pending authorized credentials.
+The app opens the simulation workbench by default for independent US stock/ETF strategy accounts using Alpaca IEX. Configure Alpaca in Settings & Backup, choose instruments, then create and explicitly start a strategy. The original terminal remains under Advanced Terminal; its `PAPER` command links to the same workbench. Includes frozen strategy versions, cash/positions, persisted history, common-period comparison, and consistent JSON/SQLite backup and restore. No live orders or notifications. See [the PAPER guide](docs/paper-trading-guide.md) for setup, costs, lifecycle limits, and validation status. Real-feed 60-minute acceptance is still pending authorized credentials.
 
 ## Troubleshooting
 

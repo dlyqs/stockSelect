@@ -11,7 +11,7 @@ import { execute, executionOrder } from '../execution'
 import { applyCorporateAction } from '../corporateActions'
 import { barSchema, type QualityRecord } from '../quality'
 import type { PaperBar } from '../../../shared/paper/types'
-import { schema, marketSchema, SCHEMA_VERSION } from './schema'
+import { schema, marketSchema, SCHEMA_VERSION, readIndexes } from './schema'
 
 type Row = { id: string; config: string; status: RunStatus; cash: number; realized: number; income: number }
 type Order = { batch_id: string; id: string; signal_time: number; status: string; payload: string }
@@ -42,6 +42,7 @@ export class PaperRepository {
         if (version === 0) this.db.exec(schema)
         this.db.exec(marketSchema); this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
       })()
+      this.db.exec(readIndexes)
       this.trace('opened', { schemaVersion: SCHEMA_VERSION, migrated: version === 0 })
     } catch (error) { opened?.close(); activePaths.delete(this.path); onFailure(error); throw error }
   }
@@ -274,6 +275,26 @@ export class PaperRepository {
     const value=this.valuation(id,at)
     this.write(()=>this.db.prepare('INSERT INTO equity_snapshots VALUES (?,?,?) ON CONFLICT(run_id,occurred_at) DO UPDATE SET payload=excluded.payload').run(id,at,json(value)))
   }
+  latestSnapshot(id: string): Valuation | null {
+    const row = this.db.prepare('SELECT payload FROM equity_snapshots WHERE run_id=? ORDER BY occurred_at DESC LIMIT 1').get(id) as {payload: string} | undefined
+    return row ? JSON.parse(row.payload) : null
+  }
+  workbenchFacts(): { summaries: import('../../../shared/paper/workbench').WorkbenchState['summaries']; market: import('../../../shared/paper/workbench').WorkbenchState['market'] } {
+    const rows = this.db.prepare(`SELECT r.id,
+      (SELECT occurred_at FROM equity_snapshots WHERE run_id=r.id ORDER BY occurred_at DESC LIMIT 1) AS sample,
+      (SELECT payload FROM run_events WHERE run_id=r.id ORDER BY cursor DESC LIMIT 1) AS event,
+      (SELECT json_extract(payload,'$.occurredAt') FROM run_events WHERE run_id=r.id ORDER BY cursor LIMIT 1) AS created,
+      (SELECT json_extract(payload,'$.type') FROM run_events WHERE run_id=r.id AND (json_extract(payload,'$.type') IN ('corporate_review','corporate_action') OR json_extract(payload,'$.reason')='CORPORATE_ACTION_REVIEW') ORDER BY cursor DESC LIMIT 1) AS review
+      FROM runs r`).all() as {id:string; sample:number|null; event:string|null; created:number|null; review:string|null}[]
+    const summaries = Object.fromEntries(rows.map(row => {
+      const event = row.event ? JSON.parse(row.event) as StrategyEvent : null
+      return [row.id, {latestSampleAt:row.sample, createdAt:row.created, reviewed:row.review==='corporate_review', latestEvent:event ? {at:event.occurredAt,type:event.type,reason:event.reason}:null, liquidating:false}]
+    }))
+    const record = this.db.prepare('SELECT symbol,market_time,observed_at,reason,mode FROM market_quality ORDER BY cursor DESC LIMIT 1').get() as {symbol:string;market_time:number;observed_at:number;reason:string;mode:string}|undefined
+    return {summaries,market:record ? {symbol:record.symbol,marketTime:record.market_time,at:record.observed_at,reason:record.reason,mode:record.mode}:null}
+  }
+  /** Single writer revision, including in-place snapshot updates. */
+  readRevision():number { return (this.db.prepare('SELECT total_changes() AS revision').get() as {revision:number}).revision }
   historyRows<T>(table: 'fills'|'equity_snapshots'|'run_events'|'corporate_actions', id: string, from: number, to: number, offset=0, limit=500): { rows:T[]; count:number } {
     const time=table==='fills'?"json_extract(payload,'$.marketTime')":(table==='run_events' || table==='corporate_actions')?"json_extract(payload,'$.occurredAt')":'occurred_at'
     const where=`run_id=? AND ${time}>=? AND ${time}<=?`

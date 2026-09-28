@@ -2,13 +2,13 @@ import Database from 'better-sqlite3'
 import { randomUUID, createHash } from 'node:crypto'
 import { basename, join } from 'node:path'
 import { writeFileSync, renameSync, readFileSync, statSync } from 'node:fs'
-import { SCHEMA_VERSION, schema, marketSchema } from './storage/schema'
+import { SCHEMA_VERSION, schema, marketSchema, readIndexes, readIndexNames } from './storage/schema'
 import { runConfigSchema, fillSchema, checkpointSchema, strategyEventSchema } from '../../shared/paper/schemas'
 import { assertAccount } from './accounting'
 import type { PaperRepository } from './storage/repository'
 const tables=['instruments','strategy_versions','runs','bars','decisions','orders','fills','cash_ledger','positions','equity_snapshots','run_events','corporate_actions','checkpoints','market_quality']
 function empty(): Database.Database {
-  const db=new Database(':memory:'); db.exec(schema); db.exec(marketSchema); db.pragma(`user_version=${SCHEMA_VERSION}`); db.pragma('foreign_keys=ON'); return db
+  const db=new Database(':memory:'); db.exec(schema); db.exec(marketSchema); db.exec(readIndexes); db.pragma(`user_version=${SCHEMA_VERSION}`); db.pragma('foreign_keys=ON'); return db
 }
 function jsonDatabase(source:string): Database.Database {
   if(statSync(source).size>256*1024*1024) throw new Error('JSON_BACKUP_TOO_LARGE')
@@ -34,8 +34,14 @@ function validate(db:Database.Database):void {
   if (db.pragma('integrity_check',{simple:true})!=='ok' || db.pragma('user_version',{simple:true})!==SCHEMA_VERSION || (db.pragma('foreign_key_check') as unknown[]).length) throw new Error('INVALID_BACKUP')
   const expected=empty()
   try {
-    const definition=(d:Database.Database):string=>JSON.stringify(d.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all())
-    if(definition(db)!==definition(expected)) throw new Error('INVALID_BACKUP_SCHEMA')
+    const definition=(d:Database.Database): Array<{type:string;name:string;tbl_name:string;sql:string}> => d.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{type:string;name:string;tbl_name:string;sql:string}>
+    const actual = definition(db), wanted = definition(expected)
+    const required = (rows: typeof actual): typeof actual => rows.filter(row => !readIndexNames.includes(row.name))
+    if(JSON.stringify(required(actual)) !== JSON.stringify(required(wanted))) throw new Error('INVALID_BACKUP_SCHEMA')
+    // Only these exact optional indexes may be absent in pre-workbench backups.
+    for(const row of actual.filter(row=>readIndexNames.includes(row.name))) {
+      if(JSON.stringify(row) !== JSON.stringify(wanted.find(item=>item.name===row.name))) throw new Error('INVALID_BACKUP_SCHEMA')
+    }
   } finally {expected.close()}
   for(const row of db.prepare('SELECT id,config,cash,realized,income,status FROM runs').all() as {id:string;config:string;cash:number;realized:number;income:number;status:string}[]) {
     const config=runConfigSchema.parse(JSON.parse(row.config))

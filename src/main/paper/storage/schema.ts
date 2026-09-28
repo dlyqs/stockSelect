@@ -20,3 +20,10 @@ export const marketSchema = `
 CREATE TABLE IF NOT EXISTS market_quality (cursor INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT NOT NULL, market_time INTEGER NOT NULL, observed_at INTEGER NOT NULL, reason TEXT NOT NULL, mode TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS quality_time ON market_quality(market_time);
 `
+
+// Additive read indexes; old schema-v2 backups remain valid without them.
+export const readIndexNames = ['paper_fills_time','paper_events_time','paper_bars_symbol_time','paper_review_cursor']
+export const readIndexes = `CREATE INDEX IF NOT EXISTS paper_fills_time ON fills(run_id,json_extract(payload,'$.marketTime'));
+CREATE INDEX IF NOT EXISTS paper_events_time ON run_events(run_id,json_extract(payload,'$.occurredAt'));
+CREATE INDEX IF NOT EXISTS paper_bars_symbol_time ON bars(symbol,market_time DESC,revision DESC);
+CREATE INDEX IF NOT EXISTS paper_review_cursor ON run_events(run_id,cursor DESC) WHERE json_extract(payload,'$.type') IN ('corporate_review','corporate_action') OR json_extract(payload,'$.reason')='CORPORATE_ACTION_REVIEW';`

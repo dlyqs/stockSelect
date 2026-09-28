@@ -14,6 +14,7 @@ interface WorkspaceStore {
   layout: LayoutPreset
   panels: PanelState[]
   activePanel: number
+  hydrationError: string | null
   hydrated: boolean
   workspaceName: string
   workspaceNames: string[]
@@ -88,18 +89,19 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
   panels: defaultPanels(2),
   activePanel: 0,
   hydrated: false,
+  hydrationError: null,
   workspaceName: 'MAIN',
   workspaceNames: ['MAIN'],
 
   hydrate: async () => {
     try {
       const result = await invoke<WorkspaceLoadResult>('workspace:load')
+      set({ hydrationError: null })
       applySnapshot(set, result.snapshot, result.active, result.names.length > 0 ? result.names : [result.active])
       return
     } catch {
-      /* fresh start */
+      set({ hydrated: false, hydrationError: '无法恢复原工作区，请重试；已保存布局不会被覆盖。' })
     }
-    set({ hydrated: true })
   },
 
   setLayout: (layout) => {
@@ -175,7 +177,7 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
   popOutPanel: (index: number) => {
     const { panels } = get()
     const panel = panels[index]
-    if (!panel || panel.fn === 'EMPTY') return
+    if (!panel || panel.fn === 'EMPTY' || panel.fn === 'PAPER') return
     void invoke('panel:popout', panel).catch(() => undefined)
     if (panels.length <= 1) {
       set({ panels: [{ id: ++panelSeq, fn: 'EMPTY', ticker: null }] })

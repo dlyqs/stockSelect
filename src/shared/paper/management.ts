@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { moneySchema, runConfigSchema, symbolSchema, timeSchema } from './schemas'
 import type { PaperRun, Fill, StrategyEvent } from './types'
 export const actionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('create'), config: runConfigSchema }).strict(),
+  z.object({ type: z.literal('create'), config: runConfigSchema, requestId: z.string().uuid().optional() }).strict(),
   z.object({ type: z.literal('control'), id: z.string().min(1).max(100), action: z.enum(['start','pause','end','archive','liquidate','review']) }).strict(),
   z.object({ type: z.literal('add'), symbol: symbolSchema, kind: z.enum(['stock','etf']) }).strict(),
   z.object({ type: z.literal('remove'), symbol: symbolSchema }).strict(),

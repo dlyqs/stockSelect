@@ -1,0 +1,25 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+const request=vi.hoisted(()=>vi.fn())
+vi.mock('../lib/ipc',()=>({invoke:request}))
+beforeEach(()=>{vi.resetModules();request.mockReset();vi.useFakeTimers();vi.stubGlobal('window',{location:{search:''},setTimeout,clearTimeout})})
+afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals()})
+it('restores the original snapshot and prevents PAPER popout from changing or saving it',async()=>{
+  const snapshot={layout:2,activePanel:1,panels:[{id:11,fn:'PORT',ticker:null},{id:12,fn:'PAPER',ticker:null}]}
+  request.mockResolvedValue({active:'MYSPACE',names:['MYSPACE'],snapshot})
+  const {useWorkspace}=await import('./workspace')
+  await useWorkspace.getState().hydrate()
+  expect(useWorkspace.getState()).toMatchObject({...snapshot,hydrated:true,workspaceName:'MYSPACE'})
+  useWorkspace.getState().popOutPanel(1)
+  vi.runAllTimers()
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(useWorkspace.getState().panels).toEqual(snapshot.panels)
+})
+it('keeps failed hydration visible and does not persist a default snapshot',async()=>{
+  request.mockRejectedValue(new Error('READ_FAILED'))
+  const {useWorkspace}=await import('./workspace')
+  await useWorkspace.getState().hydrate()
+  vi.runAllTimers()
+  expect(useWorkspace.getState().hydrated).toBe(false)
+  expect(useWorkspace.getState().hydrationError).toContain('不会被覆盖')
+  expect(request).toHaveBeenCalledTimes(1)
+})
