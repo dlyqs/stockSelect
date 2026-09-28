@@ -25,6 +25,7 @@ import WirePanel from '../panels/WirePanel'
 import SpacePanel from '../panels/SpacePanel'
 import FltPanel from '../panels/FltPanel'
 import EqsPanel from '../panels/EqsPanel'
+import PaperPanel from '../panels/PaperPanel'
 import PortPanel from '../panels/PortPanel'
 import AlrtPanel from '../panels/AlrtPanel'
 import MsgPanel from '../panels/MsgPanel'
@@ -85,6 +86,8 @@ export function PanelContent({ fn, ticker, index }: { fn: string; ticker: string
       return <FltPanel />
     case 'EQS':
       return <EqsPanel ticker={ticker} />
+    case 'PAPER':
+      return <PaperPanel />
     case 'PORT':
       return <PortPanel />
     case 'ALRT':

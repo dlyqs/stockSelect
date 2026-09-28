@@ -24,7 +24,8 @@
     "paper:probe:sqlite": "ELECTRON_RUN_AS_NODE=1 electron scripts/paper-sqlite-probe.cjs",
     "paper:probe:market": "node scripts/paper-market-probe.cjs",
     "paper:rebuild:electron": "electron-builder install-app-deps",
-    "paper:rebuild:node": "npm rebuild better-sqlite3"
+    "paper:rebuild:node": "npm rebuild better-sqlite3",
+    "paper:monitor:market": "node scripts/paper-market-monitor.cjs"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",

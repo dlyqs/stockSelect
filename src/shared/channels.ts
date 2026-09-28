@@ -1,4 +1,5 @@
 export const INVOKE_CHANNELS = [
+  'paper:state', 'paper:action', 'paper:history', 'paper:compare', 'paper:export', 'paper:restore',
   'keys:status',
   'keys:set',
   'keys:test',

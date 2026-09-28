@@ -55,6 +55,7 @@ export const FUNCTION_REGISTRY: FnEntry[] = [
   e('SOCL', 'Social stream', 'Reddit hot posts (wallstreetbets, stocks, investing, crypto) with lexicon sentiment', 'Research', false, true, 5, 'SOCL', true),
   // Analysis
   e('EQS', 'Equity screener', 'FMP screen + client-side refinement; EQS <name> runs a saved screen', 'Analysis', false, true, 5, 'EQS BIGTECH'),
+  e('PAPER', 'Paper strategies', 'Independent simulated accounts, history and comparison (Alpaca IEX)', 'Analysis', false, true, 7, 'PAPER'),
   e('PORT', 'Portfolio & P&L', 'Positions, live P&L, allocation, vs SPY', 'Analysis', false, true, 5, 'PORT'),
   e('ALRT', 'Alert manager', 'Price/move alerts that fire while minimized', 'Analysis', false, true, 5, 'ALRT'),
   e('ECO', 'Macro dashboard', 'FRED stat cards + release/earnings week', 'Analysis', false, true, 5, 'ECO'),

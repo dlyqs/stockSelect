@@ -5,6 +5,8 @@ import { existsSync } from 'node:fs'
 import { z } from 'zod'
 import { checkpointSchema, intentSchema, runConfigSchema, runStatusSchema, timeSchema } from '../../../shared/paper/schemas'
 import type { Account, CorporateAction, Fill, Intent, PaperRun, RunConfig, RunStatus, StrategyEvent, TradeReference } from '../../../shared/paper/types'
+import type { Valuation } from '../../../shared/paper/management'
+import { equity, sum, product } from '../accounting'
 import { execute, executionOrder } from '../execution'
 import { applyCorporateAction } from '../corporateActions'
 import { barSchema, type QualityRecord } from '../quality'
@@ -12,7 +14,7 @@ import type { PaperBar } from '../../../shared/paper/types'
 import { schema, marketSchema, SCHEMA_VERSION } from './schema'
 
 type Row = { id: string; config: string; status: RunStatus; cash: number; realized: number; income: number }
-type Order = { id: string; signal_time: number; status: string; payload: string }
+type Order = { batch_id: string; id: string; signal_time: number; status: string; payload: string }
 const activePaths = new Set<string>()
 function json(value: unknown): string {
   const text = JSON.stringify(value)
@@ -81,7 +83,7 @@ export class PaperRepository {
       if (!this.db.prepare('SELECT id FROM strategy_versions WHERE id=?').get(config.strategyVersion)) throw new Error('UNKNOWN_STRATEGY_VERSION')
       this.db.prepare('INSERT INTO runs VALUES (?,?,?,?,0,0)').run(id, json(config), 'created', config.initialCash)
       this.ledger(id, 'initial', config.initialCash, config.initialCash)
-      this.checkpoint(id, null, now); this.event(id, 'created', now, 'INITIAL_CAPITAL', {})
+      this.checkpoint(id, null, now); this.event(id, 'created', now, 'INITIAL_CAPITAL', {}); this.snapshot(id,now)
     })
     return this.getRun(id)
   }
@@ -96,25 +98,27 @@ export class PaperRepository {
     runStatusSchema.parse(status); timeSchema.parse(now)
     this.write(() => {
       const old = this.getRun(id).status
-      if (old === 'archived' || (old === 'ended' && status !== 'archived')) throw new Error('RUN_TERMINAL')
+      if (old === 'archived' || (old === 'ended' && !['ended','archived'].includes(status))) throw new Error('RUN_TERMINAL')
       this.db.prepare('UPDATE runs SET status=? WHERE id=?').run(status, id)
       if (status !== 'running') this.cancelPendingInternal(id, now, reason)
       this.checkpoint(id,this.getCheckpoint(id).state,now)
       this.event(id, status, now, reason, {})
     })
   }
-  commitDecision(runId: string, batchId: string, signalTime: number, intents: Intent[], nextState: unknown): boolean {
+  commitDecision(runId: string, batchId: string, signalTime: number, intents: Intent[], nextState: unknown, liquidation = false): boolean {
     z.string().min(1).parse(batchId); timeSchema.parse(signalTime)
     const sorted = executionOrder(z.array(intentSchema).max(100).parse(intents)); const payload = json({ intents: sorted, nextState })
     if (new Set(sorted.map(i => i.id)).size !== sorted.length) throw new Error('DUPLICATE_INTENT')
     return this.write(() => {
       if (this.db.prepare('SELECT 1 FROM decisions WHERE run_id=? AND batch_id=?').get(runId, batchId)) return false
       const run = this.getRun(runId)
-      if (run.status !== 'running') throw new Error('RUN_NOT_RUNNING')
+      if (liquidation) {
+        if(!batchId.startsWith('liquidate:') || run.status==='archived' || sorted.some(i=>i.side!=='sell' || i.reason!=='USER_LIQUIDATION')) throw new Error('INVALID_LIQUIDATION')
+      } else if (run.status !== 'running' || batchId.startsWith('liquidate:')) throw new Error('RUN_NOT_RUNNING')
       if (sorted.some(i => !run.config.symbols.includes(i.symbol))) throw new Error('SYMBOL_NOT_ALLOWED')
       this.db.prepare('INSERT INTO decisions VALUES (?,?,?,?)').run(runId, batchId, signalTime, payload)
       for (const i of sorted) this.db.prepare("INSERT INTO orders VALUES (?,?,?,?,'pending',?,NULL)").run(runId, i.id, batchId, signalTime, json(i))
-      this.checkpoint(runId, nextState, signalTime); this.event(runId, 'decision', signalTime, batchId, { count: sorted.length })
+      this.checkpoint(runId, nextState, signalTime); this.event(runId, 'decision', signalTime, batchId, { count: sorted.length, intents: sorted.map(i=>({symbol:i.symbol,side:i.side,quantity:i.quantity,reason:i.reason})) })
       return true
     })
   }
@@ -130,7 +134,7 @@ export class PaperRepository {
       const row = this.db.prepare('SELECT * FROM orders WHERE run_id=? AND id=?').get(runId, intentId) as Order | undefined
       if (!row || row.status !== 'pending') return null
       const run = this.getRun(runId)
-      if (run.status !== 'running') throw new Error('RUN_NOT_RUNNING')
+      if (run.status !== 'running' && !(['paused','ended','data_insufficient','created'].includes(run.status) && row.batch_id.startsWith('liquidate:'))) throw new Error('RUN_NOT_RUNNING')
       if (this.pending(runId)[0]?.intent.id !== intentId) throw new Error('ORDER_SEQUENCE')
       const intent: Intent = JSON.parse(row.payload)
       let result: ReturnType<typeof execute>
@@ -149,12 +153,17 @@ export class PaperRepository {
       this.ledger(runId, `fill:${intentId}`, result.cashDelta, result.account.cash)
       this.checkpoint(runId, this.getCheckpoint(runId).state, now)
       this.event(runId, 'filled', now, intent.reason, { intentId, fillId: fill.id })
+      this.snapshot(runId,now)
       return fill
     })
   }
+  corporateActions(runIds: string[], action: CorporateAction): void {
+    this.write(()=>{ for (const id of runIds) this.corporateAction(id,action) })
+  }
   corporateAction(runId: string, action: CorporateAction): boolean {
     return this.write(() => {
-      if (this.db.prepare('SELECT 1 FROM corporate_actions WHERE run_id=? AND id=?').get(runId, action.id)) return false
+      const previous=this.db.prepare('SELECT payload FROM corporate_actions WHERE run_id=? AND id=?').get(runId,action.id) as {payload:string}|undefined
+      if(previous) {if(previous.payload!==json(action)) throw new Error('CORPORATE_ACTION_IMMUTABLE');return false}
       const run = this.getRun(runId)
       if (run.status !== 'paused') throw new Error('PAUSE_BEFORE_CORPORATE_ACTION')
       if (!run.config.symbols.includes(action.symbol)) throw new Error('SYMBOL_NOT_ALLOWED')
@@ -163,7 +172,8 @@ export class PaperRepository {
       this.db.prepare('INSERT INTO corporate_actions VALUES (?,?,?)').run(runId, action.id, json(action))
       this.ledger(runId, `action:${action.id}`, result.cashDelta, result.account.cash)
       this.checkpoint(runId, this.getCheckpoint(runId).state, action.occurredAt)
-      this.event(runId, 'corporate_action', action.occurredAt, action.type, { actionId: action.id }); return true
+      const committedAt=Date.now()
+      this.event(runId, 'corporate_action', committedAt, action.type, { actionId: action.id, effectiveAt:action.occurredAt }); this.snapshot(runId,committedAt); return true
     })
   }
   private cancelPendingInternal(id: string, now: number, reason: string): void {
@@ -230,6 +240,50 @@ export class PaperRepository {
         this.event(id, 'cancelled', now, 'INTENT_EXPIRED', { intentId: intent.id })
       }
     })
+  }
+  instruments(): Array<{ symbol: string; kind: string }> { return this.db.prepare('SELECT * FROM instruments ORDER BY symbol').all() as Array<{ symbol: string; kind: string }> }
+  addInstrument(symbol: string, kind: 'stock' | 'etf'): void {
+    this.write(() => {
+      const pool = new Set([...this.instruments().map(i=>i.symbol),...this.listRuns().filter(r=>r.status!=='archived').flatMap(r=>r.config.symbols),symbol])
+      if (pool.size > 10) throw new Error('SYMBOL_LIMIT')
+      this.db.prepare('INSERT OR IGNORE INTO instruments VALUES (?,?)').run(symbol,kind)
+    })
+  }
+  removeInstrument(symbol: string): void {
+    if (this.listRuns().some(r=>r.status!=='archived' && r.config.symbols.includes(symbol))) throw new Error('SYMBOL_IN_USE')
+    this.write(()=>this.db.prepare('DELETE FROM instruments WHERE symbol=?').run(symbol))
+  }
+  valuation(id: string, at: number): Valuation {
+    const run=this.getRun(id)
+    const prices: Valuation['prices'] = {}
+    for (const symbol of run.config.symbols) {
+      const row=this.db.prepare('SELECT payload FROM bars WHERE symbol=? AND market_time<=? ORDER BY market_time DESC,revision DESC LIMIT 1').get(symbol,at-60000) as {payload:string}|undefined
+      if (row) { const b:PaperBar=JSON.parse(row.payload); prices[symbol]={price:b.close,at:b.marketTime+60000} }
+
+    }
+    const missing=run.account.positions.some(p=>{
+      if(!prices[p.symbol]) return true
+      const split=this.db.prepare("SELECT payload FROM corporate_actions WHERE run_id=? AND json_extract(payload,'$.symbol')=? AND json_extract(payload,'$.type')='split' ORDER BY json_extract(payload,'$.occurredAt') DESC LIMIT 1").get(id,p.symbol) as {payload:string}|undefined
+      return !!split && prices[p.symbol].at<=JSON.parse(split.payload).occurredAt
+    })
+    const value=missing ? null : equity(run.account,Object.fromEntries(Object.entries(prices).map(([k,v])=>[k,v.price])))
+    return {at,equity:value,realized:run.account.realizedPnl,income:run.account.income,unrealized:value===null?null:run.account.positions.reduce((total,p)=>sum(total,product(prices[p.symbol].price,p.quantity)-p.cost),0),prices,quality:missing?'missing':run.account.positions.some(p=>at-prices[p.symbol].at>120000)?'stale':'fresh'}
+  }
+  snapshot(id: string, at: number): void {
+    timeSchema.parse(at)
+    const value=this.valuation(id,at)
+    this.write(()=>this.db.prepare('INSERT INTO equity_snapshots VALUES (?,?,?) ON CONFLICT(run_id,occurred_at) DO UPDATE SET payload=excluded.payload').run(id,at,json(value)))
+  }
+  historyRows<T>(table: 'fills'|'equity_snapshots'|'run_events'|'corporate_actions', id: string, from: number, to: number, offset=0, limit=500): { rows:T[]; count:number } {
+    const time=table==='fills'?"json_extract(payload,'$.marketTime')":(table==='run_events' || table==='corporate_actions')?"json_extract(payload,'$.occurredAt')":'occurred_at'
+    const where=`run_id=? AND ${time}>=? AND ${time}<=?`
+    const count=(this.db.prepare(`SELECT count(*) AS n FROM ${table} WHERE ${where}`).get(id,from,to) as {n:number}).n
+    const rows=this.db.prepare(`SELECT payload FROM ${table} WHERE ${where} ORDER BY ${time},rowid LIMIT ? OFFSET ?`).all(id,from,to,limit,offset) as {payload:string}[]
+    return {rows:rows.map(r=>JSON.parse(r.payload)),count}
+  }
+  exportLedger(): Record<string,unknown> {
+    const tables=['instruments','strategy_versions','runs','bars','decisions','orders','fills','cash_ledger','positions','equity_snapshots','run_events','corporate_actions','checkpoints','market_quality']
+    return this.db.transaction(()=>({schemaVersion:SCHEMA_VERSION,exportedAt:Date.now(),tables:Object.fromEntries(tables.map(t=>[t,this.db.prepare(`SELECT * FROM ${t}`).all()]))}))()
   }
   async backup(destination: string): Promise<void> {
     if (this.failed) throw new Error('STORE_HALTED')

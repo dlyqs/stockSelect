@@ -1,3 +1,4 @@
+import { registerPaperIpc } from './paper/ipc'
 import { createPaperRuntime, type PaperRuntime } from './paper/runtime'
 import { app, BrowserWindow, clipboard, dialog, ipcMain } from 'electron'
 import { logger } from './logger'
@@ -903,5 +904,7 @@ export function registerIpc(
 
   handle('app:version', () => app.getVersion())
 
-  return { stream, paper: createPaperRuntime(() => keys.getKey('alpaca')) }
+  const paper=createPaperRuntime(() => keys.getKey('alpaca'))
+  registerPaperIpc(handle,paper,()=>keys.getKey('alpaca'))
+  return { stream, paper }
 }

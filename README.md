@@ -230,6 +230,10 @@ cross-compilation is unreliable. Icons and alert sounds are generated from code:
 `node scripts/generate-icon.js` and `node scripts/generate-sounds.js` (sine-wave beeps
 synthesized by the script, so no third-party samples).
 
+## Paper strategies
+
+Run `PAPER` for independent simulated US stock/ETF strategy accounts using Alpaca IEX. Includes frozen strategy versions, cash/positions, persisted history, common-period comparison, and consistent JSON/SQLite backup and restore. No live orders or notifications. See [the PAPER guide](docs/paper-trading-guide.md) for setup, costs, lifecycle limits, and validation status. Real-feed 60-minute acceptance is still pending authorized credentials.
+
 ## Troubleshooting
 
 - Logs rotate in `userData/logs` (5 × 2 MB, secrets redacted): SET → About → **Open

@@ -1,10 +1,10 @@
 # 项目开发入口
 
-更新日期：2026-09-28。本文件描述当前已实现代码；实时模拟策略的契约、账本、分钟采集和运行器（Phase 1–4）已实现；配置界面、绩效查询和最终真实链路验收仍待后续阶段。
+更新日期：2026-09-28。本文件描述当前已实现代码；实时模拟策略 Phase 1–6 已实现，含 PAPER 管理界面、持久绩效和备份恢复；Phase 7 的无界面检查与本机打包通过，真实 IEX 60 分钟采集因缺凭证保持 blocked。
 
 ## 当前项目概况
 
-OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript、Zustand、React Query 和 lightweight-charts。主进程负责外部网络、凭证、服务和本地存储；renderer 通过受限 IPC 调用服务，不直接访问供应商或持有密钥。已新增独立模拟成交、SQLite 账本、raw IEX 采集与策略 worker，并接入应用生命周期。用户界面尚未实现，当前服务入口仅供后续主进程管理接口使用。
+OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript、Zustand、React Query 和 lightweight-charts。主进程负责外部网络、凭证、服务和本地存储；renderer 通过受限 IPC 调用服务，不直接访问供应商或持有密钥。已新增独立模拟成交、SQLite 账本、raw IEX 采集与策略 worker，并接入应用生命周期。通过 PAPER 命令管理独立实例；受限 IPC 提供控制、分页历史、共同区间比较和导出/恢复。使用说明见 [paper-trading-guide.md](paper-trading-guide.md)。
 
 ## 文件组织与修改入口
 
@@ -80,3 +80,14 @@ OpenTerminal 1.1.2 是 Electron 桌面行情终端，采用 React、TypeScript�
 - `runtime.ts` 通过 `ipc.ts` 服务组装复用凭证，并由 `index.ts` 接入电源和退出生命周期；调度不绑定页面。退出排空写入，重启/唤醒取消旧意图并预热，持久心跳帮助定位中断。存储错误停止调度，绝不重置账本。
 - 现有提醒服务保持独立，新链路无任何通知发送。配置与控制 UI、历史/绩效查询留 Phase 5–6；实际后台/休眠操作、真实 IEX 和完整打包留 Phase 7。
 - 本批新增 15 项测试；全套 205 项、typecheck、lint、build 均通过。生产构建策略体经独立 worker 探针验证。未启动页面，未提交推送。Phase 1–4 授权已完成，计划恢复 manual。
+
+
+## PAPER 管理、绩效及交付（Phase 5–7，本轮最新状态）
+
+- `shared/paper/management.ts`、`main/paper/{management,instruments,ipc}.ts` 提供受限 zod IPC、assets 只读验证、十标的池、冻结配置、运行控制、清仓及公司行动管理。`PaperPanel` 和 `PaperEquityChart` 提供终端入口、账户/历史/曲线和数据质量展示；不影响 PORT/ALRT。
+- `queries.ts`、`performance.ts` 与 repository 净值持久化提供成本后盈亏、日/月收益、采样回撤、完整平仓样本及共同时间区间比较。暂停估值可能陈旧；结束/归档保留结束时结果，未平仓明确保留；未归档的结束实例仍可显式清仓，结束状态不变。公司行动按当前持仓人工录入，全部未结束受影响账户同事务；必须及时核对，不能追溯模拟过去持仓。
+- `backup.ts` 支持完整 JSON 与一致性 SQLite 恢复校验，在新副本上切换并保留原库及恢复前备份。恢复后服务停止，退出并重启生效；损坏数据库不会自动重建。CSV 只用于查看成交。
+- 新增 7 项管理/数值/恢复及十标的三策略无界面集成测试，完整 **27 文件 / 212 tests passed**，typecheck、lint、build 通过。原组合、图表、提醒相关测试随全套回归通过。没有启动页面、Playwright 或 GitNexus，没有提交推送。
+- macOS arm64 未签名 `.app` 已通过 electron-builder 本地打包；包内 Electron 31.7.7 / Node 20.18.0 / ABI 125 从 app.asar 加载 SQLite worker 的事务/回滚/重开探针通过。签名、公证、Windows/Linux 尚未验证。首次下载等待改为显式使用已安装 Electron distribution；具体命令见计划。
+- `paper:probe:market` 与新增 `paper:monitor:market -- 60 AAPL,SPY <evidence.jsonl>` 均返回未配置授权凭证。真实交易时段连续至少 60 分钟采集仍是 Phase 7 的必要阻塞项。用户实际最小化、休眠恢复及 UI 交互尚待人工操作，离线测试不替代这些证据。
+- 本轮用户授权自动完成 Phase 5–7；计划保留 auto_until / Phase 5–7，Phase 5–6 completed、Phase 7 blocked，补齐凭证及交易时段后继续该范围。唯一阶段状态来源为 [paper-trading-plan.md](paper-trading-plan.md)。

@@ -105,9 +105,9 @@ React 模拟工作台：配置、运行、持仓、历史、对比
 | Phase 2 | 账本与资金核心 | SQLite、原子记账、模拟执行与公司行动 | completed | 单写入 SQLite、事务记账、成交/公司行动、恢复与备份；10 项核心测试 | 全套 190 项测试通过 |
 | Phase 3 | 分钟行情服务 | 10 标的共享采集、日历、质量与缺口 | completed | raw IEX 共享采集、2026 日历、修订与质量持久化 | 离线边界测试通过；真实 IEX 待凭证 |
 | Phase 4 | 策略运行链路 | worker、3 个模板、幂等执行与恢复 | completed | 三模板、隔离 worker、调度及主进程恢复接线 | 全套 205 项测试通过；真实应用操作留 Phase 7 |
-| Phase 5 | 配置和运行界面 | 手选标的、创建实例、运行控制和持仓 | pending | — | 依赖 4 |
-| Phase 6 | 历史和绩效 | 净值、交易查询、对比、备份和导出 | pending | — | 依赖 2、4、5 |
-| Phase 7 | 整体验证与使用文档 | 故障恢复、真实行情核验、交付检查 | pending | — | 依赖 1–6 |
+| Phase 5 | 配置和运行界面 | 手选标的、创建实例、运行控制和持仓 | completed | PAPER 面板、受限 IPC、标的校验及生命周期/公司行动管理 | 未启动页面，外观交用户验证 |
+| Phase 6 | 历史和绩效 | 净值、交易查询、对比、备份和导出 | completed | 净值采样、分页历史、共同区间绩效、SQLite/JSON 恢复 | 数值与恢复往返测试通过 |
+| Phase 7 | 整体验证与使用文档 | 故障恢复、真实行情核验、交付检查 | blocked | 212 项测试、指南、本机未签名 .app 与包内 SQLite 验证 | 缺授权凭证，真实交易时段连续 60 分钟采集未完成 |
 
 ## 阶段详情
 
@@ -215,18 +215,24 @@ React 模拟工作台：配置、运行、持仓、历史、对比
 预期文件：`PaperPanel.tsx`、相关子组件；`src/shared/channels.ts`、preload、`ipc.ts`、功能注册表和面板映射。建议新增 `PAPER` 命令。
 
 验收清单：
-- [ ] 手动添加/移除并验证股票或 ETF，去重且全局最多 10 个；不引入新的自动选股器。
-- [ ] 创建实例可选策略版本、标的、本金、费用、滑点和仓位约束；非法参数无法提交。
-- [ ] 展示运行/预热/暂停/数据不足/错误状态、行情源和数据时间。
-- [ ] 暂停、恢复、结束、模拟清仓与归档语义明确；修改配置创建新实例。
-- [ ] 当前现金、持仓、买卖信号原因和模拟盈亏可查；可录入/核对公司行动。
-- [ ] 新模块无通知开关/发送按钮；原终端面板和手工 PORT 不被替换。
+- [x] 手动添加/移除并验证股票或 ETF，去重且全局最多 10 个；不引入新的自动选股器。
+- [x] 创建实例可选策略版本、标的、本金、费用、滑点和仓位约束；非法参数无法提交。
+- [x] 展示运行/预热/暂停/数据不足/错误状态、行情源和数据时间。
+- [x] 暂停、恢复、结束、模拟清仓与归档语义明确；修改配置创建新实例。
+- [x] 当前现金、持仓、买卖信号原因和模拟盈亏可查；可录入/核对公司行动。
+- [x] 新模块无通知开关/发送按钮；原终端面板和手工 PORT 不被替换。
 
 助手验证：IPC schema、生命周期处理、类型检查、lint 和构建；必要的数据转换逻辑测试。用户人工验证：打开 PAPER、添加标的、创建实例和查看状态的交互与外观；助手不启动页面、不调用 Playwright。
 
 依赖：Phase 4；纯视觉检查默认不阻塞 Phase 6。
 
-实际完成：未开始，执行后补充。
+实际完成（2026-09-28）：
+
+- 新增 PAPER 注册入口、PaperPanel/PaperEquityChart 和 paper:state/action/history/compare/export/restore 白名单；preload 复用现有白名单桥接，无扩权。独立于 PORT/ALRT，没有消息发送器或通知入口。
+- management.ts + shared/paper/management.ts 提供 zod 受限请求、冻结参数实例、标的池去重/最多十个；添加时用 Alpaca 只读 assets 元数据核验 active us_equity、受支持交易所及 tradable，股票/ETF 标签由用户核对（供应商资产类别不能进一步区分）。未配置凭证时拒绝验证，不用假标的填充。
+- 启动/暂停/结束/归档、配置复制为新实例；清仓专门抑制策略信号、取消旧意图、等待新的常规时段成交参考，超时或完成后暂停。暂停和已结束但未归档的实例也可单独请求清仓，无需恢复策略；清仓后原已结束实例保持 ended。结束/归档保留未平仓和结束时估值（明确请求清仓的后续成交另记），不继续策略或公司行动调整。
+- 公司行动按当前持仓显式录入，暂停全部未结束的受影响实例，跨账户同事务应用；唯一 ID 防重复，复用 ID 改内容拒绝。拆股后未取得行动之后的价格时净值记缺失，不混用旧价新股数。
+- 面板展示成本配置、账户与持仓、行情源/逐价时间/质量、运行状态、信号原因及公司行动核对；未启动页面或 Playwright。IPC 与管理边界、无页面清仓测试通过，typecheck/lint/build 通过。外观及真实交互由用户后续核验。
 
 ### Phase 6：历史和绩效
 
@@ -235,17 +241,23 @@ React 模拟工作台：配置、运行、持仓、历史、对比
 预期文件：`src/main/paper/performance.ts`、`queries.ts`、`backup.ts`；历史/净值/对比组件；`exportService.ts` 相关扩展。
 
 验收清单：
-- [ ] 净值快照和成交记录分页查询、按运行与日期过滤；重启后保持。
-- [ ] 按本计划公式核算成本后收益、已实现/未实现盈亏、最大回撤、日/月表现与样本量。
-- [ ] 共同观察区间对比，不把不同本金的绝对盈亏当收益率；断线与未核对公司行动可见。
-- [ ] 旧版本/归档实例保留，配置变更不改写历史曲线。
-- [ ] CSV 用于查看，完整 JSON/一致性数据库备份用于恢复；恢复不覆盖唯一副本，完整性校验后切换。
+- [x] 净值快照和成交记录分页查询、按运行与日期过滤；重启后保持。
+- [x] 按本计划公式核算成本后收益、已实现/未实现盈亏、最大回撤、日/月表现与样本量。
+- [x] 共同观察区间对比，不把不同本金的绝对盈亏当收益率；断线与未核对公司行动可见。
+- [x] 旧版本/归档实例保留，配置变更不改写历史曲线。
+- [x] CSV 用于查看，完整 JSON/一致性数据库备份用于恢复；恢复不覆盖唯一副本，完整性校验后切换。
 
 助手验证：独立数值样例、零交易、无亏损/无收益、跨月、费用、拆股和分红、数据缺口、分页及备份恢复往返测试。用户人工验证：选两实例比较曲线，重启后查询历史，查看导出内容。
 
 依赖：Phase 2、4、5。日志重点为备份/恢复、查询错误和绩效计算异常，不逐次 UI 刷新记录。
 
-实际完成：未开始，执行后补充。
+实际完成（2026-09-28）：
+
+- repository 增加创建、成交、公司行动及每分钟净值采样，保留价格时间及 stale/missing；同一时间多笔成交保存该时刻最终账户状态。暂停可保留旧价估值，结束除显式清仓外冻结最后结果；不会修改旧运行配置。
+- queries/performance 提供按运行/日期分页的成交、净值及事件；独立计算已实现/未实现/现金收益，运行累计成本后收益、分钟采样最大回撤、纽约交易日期的日/月收益、完整平仓样本。首末期与数据缺口标不完整；展示观察时长及常规时段 fresh 标的分钟覆盖率（含暂停时段）。
+- 公平对比采用所有选中实例共有的已记录时间作为起止，按共同起点净值归一；没有两个共同采样点则拒绝比较，不倒填估值。缺口、旧价和公司行动未核对显式标注。历史曲线按分页显示；长区间对比曲线最多约 2000 个展示点，收益计算仍用完整账本；图线不跨陈旧/缺失分钟连线。
+- CSV 导出全部成交（含单元格转义），完整 JSON 保留全部 14 表，SQLite 使用一致性 backup API。SQLite/JSON 恢复均先验证 schema、外键、现金流水余额、账户/检查点/成交/事件和源码哈希，再生成独立副本及恢复前备份；原子更新下次启动指针，暂停当前服务并要求重启。原账本不覆盖，非法恢复不切换指针。
+- 新增 management.test.ts 与 integration.test.ts：费用/分红与平均成本独立数值、跨月/回撤/零交易、共同区间、分页、拆股平仓样本、跨账户行动回滚和 SQLite/JSON 往返通过。本批全套 212 项及 typecheck/lint/build 通过；后续 Phase 7 继续核验交付。
 
 ### Phase 7：整体验证与使用文档
 
@@ -254,18 +266,29 @@ React 模拟工作台：配置、运行、持仓、历史、对比
 预期文件：集成测试、只读行情诊断脚本、`docs/paper-trading-guide.md`、README 增量和本计划/overview 完成记录。
 
 验收清单：
-- [ ] 10 标的、3 策略实例的无界面整链路验证，通过分钟采集、决策、模拟成交、查询和恢复。
-- [ ] 断线、限流、缺 bar、休眠模拟、worker 异常、数据库失败、重复事件场景无虚构或重复成交。
+- [x] 10 标的、3 策略实例的无界面整链路验证，通过分钟采集、决策、模拟成交、查询和恢复。
+- [x] 断线、限流、缺 bar、休眠模拟、worker 异常、数据库失败、重复事件场景无虚构或重复成交。
 - [ ] 用户提供权限后完成真实交易时段至少 60 分钟的只读行情持续采集，核对 feed、时间、缺口与请求量；该时长只证明采集基本工作，不证明稳定盈利。
-- [ ] typecheck、lint、必要测试和构建通过；原组合/图表/提醒相关回归检查通过。
-- [ ] 当前机器打包与 SQLite 运行时加载有证据；其他平台未验证如实标记，不宣称全平台已通过。
-- [ ] 使用文档覆盖本金与成本、模板扩展、版本冻结、公司行动核对、备份恢复、断线限制和未来消息事件接口。
+- [x] typecheck、lint、必要测试和构建通过；原组合/图表/提醒相关回归检查通过。
+- [x] 当前机器打包与 SQLite 运行时加载有证据；其他平台未验证如实标记，不宣称全平台已通过。
+- [x] 使用文档覆盖本金与成本、模板扩展、版本冻结、公司行动核对、备份恢复、断线限制和未来消息事件接口。
 
 助手验证：无界面测试与诊断，不拉起页面；真实凭证/交易时段不足时保留未完成的集成验收并记录解阻条件。用户人工验证：最小化仍运行、休眠后缺口、重启历史、界面外观及交互。外观检查可延期；真实行情证据缺失或确认的账务错误阻塞最终完成。
 
 依赖：全部前序阶段。此阶段不以“连续运行几天盈利”作为工程验收标准，盈利观察属于用户后续持续使用。
 
-实际完成：未开始，执行后补充。
+实际执行（2026-09-28；因真实行情缺失保持 blocked，不标 completed）：
+
+- 新增 10 标的 + SMA/RSI/突破三个真实隔离 worker 的无页面整链路测试，覆盖共享分钟采集、信号、新参考成交、净值/查询、重复轮询及异常退出恢复；三账户余额保持独立，重启不重复交易。另测清仓等待后续价格、运行/暂停/结束账户清仓状态、休眠中断清仓不恢复策略及盘前拒绝。
+- 全套 27 文件 / **212 tests passed**（新增 7 项）；在系统 Node 与 Electron Node 模式均通过。原有断网、429、缺 bar、休眠/调度间隙、worker 超时/崩溃、SQLITE_READONLY、重复事件测试以及组合/图表/提醒相关回归通过。`npm run typecheck`、`npm run lint`、`npm run build`、`git diff --check` 通过。
+- 本机 macOS arm64 打包：`CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --dir --publish never -c.mac.identity=null -c.electronDist=node_modules/electron/dist -c.directories.output=release/paper-validation` 成功退出；产物 `release/paper-validation/mac-arm64/OpenTerminal.app`。最初默认下载分发包长期等待，终止该构建后改用本机已安装 Electron，并未绕过应用打包步骤。
+- 使用包内 `Contents/MacOS/OpenTerminal` 配合 `ELECTRON_RUN_AS_NODE=1` 执行 `scripts/paper-sqlite-probe.cjs`，驱动指向包内 `Contents/Resources/app.asar/node_modules/better-sqlite3`，验证 worker 加载、事务、回滚、关闭重开成功；Electron 31.7.7 / Node 20.18.0 / ABI 125。未运行主应用或创建窗口。未签名、未公证，不宣称安装器签名及其他平台通过。
+- 新增 `docs/paper-trading-guide.md`、README PAPER 入口和 `scripts/paper-market-monitor.cjs`。指南覆盖成本/本金、参数模板与源码版本、人工公司行动及当前持仓语义、数据库恢复、历史指标、运行/休眠边界、事件 cursor 扩展。持续只读探针输出时间、feed、请求量与缺口 JSONL，不记录密钥/认证头；不接任何订单端点。
+- 本次 `npm run paper:probe:market` 返回 `verified:false` / 授权 `ALPACA_API_KEY KEY_ID:SECRET unavailable`；`npm run paper:monitor:market` 返回 `verified:false, reason:NO_KEY`。没有伪造在线验收证据或执行 60 分钟空跑。
+- **精确解阻条件**：在本机配置已有授权 Alpaca IEX 凭证（环境变量或本地未提交 .env），在日历覆盖的常规交易时段、距收市大于 60 分钟时运行 `npm run paper:monitor:market -- 60 AAPL,SPY /absolute/path/evidence.jsonl`，核对完整时长、source/feed、时间新鲜度、缺口和请求量，实际目标标的可手动替换（最多 10 个）；补齐真实证据后再将本阶段设为 completed。不得自动申请账号、购买行情或换源。
+- 用户人工操作仍待：PAPER 外观/交互、最小化继续、真实系统休眠/恢复和重启后历史。纯外观检查可延期；真实行情是计划明确的最终阻塞项。
+- 打包和 Electron 测试后已执行 `paper:rebuild:node`，系统 Node 再次加载 SQLite 成功；当前 node_modules 供系统 Node 测试，启动开发版 Electron 前需 `paper:rebuild:electron`。独立打包产物保留 Electron ABI 驱动。
+- 当前目录更改未提交/推送；无页面、Playwright、GitNexus、子代理或新聊天。自动模式保留 auto_until、起止 Phase 5–7，以便解阻后继续；未把 Phase 7 或整个项目宣称完成。
 
 ## 关键链路可观测性
 
@@ -276,12 +299,12 @@ React 模拟工作台：配置、运行、持仓、历史、对比
 ## 后续执行规则
 
 ```text
-execution mode: manual
-automatic start phase: none
-automatic stop phase: none
+execution mode: auto_until
+automatic start phase: Phase 5
+automatic stop phase: Phase 7
 conversation relay: finished; batch 1 = Phase 1–2; batch 2 = Phase 3–4
 review status: approved
-execution authorization: 用户「请自动完成 phase1-2，然后新开对话完成 phase3-4.」；当前目录执行，不提交或推送
+execution authorization: 用户「请自动完成phase5-7」；当前目录执行，不提交或推送，不创建接力聊天
 ```
 
 1. 原计划已获用户授权：自动完成 Phase 1–2，然后新开对话完成 Phase 3–4。全局范围为 Phase 1–4，Phase 2 为对话接力边界，不是全局停止边界。
@@ -302,3 +325,7 @@ execution authorization: 用户「请自动完成 phase1-2，然后新开对话�
 接力配置：每对话 2 阶段；workspace policy = shared_saved_project；工作区 `/Users/git_local/openterminal`；projectId `cb765b1b-117c-4415-96f5-8c775c20208a`；relay reference `/Users/git_local/dev-workflow-skill/references/conversation-relay.md`。新对话完成 Phase 4 后停止并恢复 manual，不能继续 Phase 5 或再创建接力。
 
 执行边界完成记录（2026-09-28）：Phase 1–4 均已完成计划内实现与本轮无界面验证；manual，自动起止均 none，接力 finished。Phase 5–7 保持 pending，后续需新的阶段执行指令。真实行情、应用操作与完整打包延期项继续保留，不将全项目视为验收完成。
+
+本轮追加授权（2026-09-28）：用户「请自动完成phase5-7」。自动范围改为 Phase 5–7，当前目录实施，不新建聊天，不提交推送；此前 Phase 1–4 的停止记录属于历史，不限制本轮。Phase 5–6 已完成实现，Phase 7 按实际证据推进。
+
+本轮交付记录（2026-09-28）：Phase 5–6 completed；Phase 7 blocked，解阻条件见该阶段实际执行记录。保留 auto_until 5–7，不新建接力。使用指南、无界面测试和本机打包已交付，真实行情与用户系统交互证据不由离线结果代替。
