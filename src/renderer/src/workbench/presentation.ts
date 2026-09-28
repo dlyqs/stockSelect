@@ -1,3 +1,4 @@
+import type { StrategyFilter } from './state'
 import type { PaperRun } from '../../../shared/paper/types'
 import type { WorkbenchState } from '../../../shared/paper/workbench'
 import { templateInfo, type TemplateKind } from '../../../shared/paper/templates'
@@ -21,6 +22,18 @@ export function allowedControls(run:PaperRun,state:WorkbenchState):Control[] {
 }
 export function needsAttention(run:PaperRun,state:WorkbenchState):boolean {
   return !state.summaries[run.id]?.reviewed || ['error','data_insufficient'].includes(run.status) || state.valuations[run.id]?.quality!=='fresh' || !!state.summaries[run.id]?.liquidating || run.status==='paused'
+}
+export function matchesStrategyFilter(run: PaperRun, state: WorkbenchState, filter: StrategyFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'active') return ['running', 'warming', 'data_insufficient'].includes(run.status)
+  if (filter === 'attention') return run.status !== 'archived' && needsAttention(run, state)
+  if (filter === 'history') return ['ended', 'archived'].includes(run.status)
+  return run.status === filter
+}
+export function selectStrategyRuns(state: WorkbenchState, filter: StrategyFilter, search = ''): PaperRun[] {
+  const term = search.trim().toLocaleLowerCase()
+  return state.runs.filter(run => matchesStrategyFilter(run, state, filter)
+    && (!term || [runName(run), run.id, ...run.config.symbols].some(value => value.toLocaleLowerCase().includes(term))))
 }
 /** Resolve NY midnight using the zone itself; DST days may contain 23 or 25 hours. */
 function midnight(date:string):number {

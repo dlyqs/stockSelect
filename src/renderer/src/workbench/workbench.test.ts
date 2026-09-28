@@ -24,6 +24,18 @@ describe('workbench contracts',()=>{
     useNavigation.getState().setTerminal(false)
     expect(useNavigation.getState().page).toBe('create')
   })
+  it('opens targeted strategy views and preserves them when returning from details',()=>{
+    const navigation=useNavigation.getState()
+    navigation.setStrategySearch('SPY')
+    navigation.openStrategies('attention')
+    expect(useNavigation.getState()).toMatchObject({page:'strategies',strategyFilter:'attention',strategySearch:'',runId:null})
+    navigation.setStrategySearch('SMA')
+    navigation.navigate('detail','run-a')
+    navigation.navigate('strategies')
+    expect(useNavigation.getState()).toMatchObject({page:'strategies',strategyFilter:'attention',strategySearch:'SMA',runId:null})
+    navigation.openStrategies()
+    expect(useNavigation.getState()).toMatchObject({page:'strategies',strategyFilter:'all',strategySearch:''})
+  })
   it('shares field defaults and validation with the execution contracts',()=>{
     for(const kind of ['sma','rsi','breakout'] as const) {
       expect(parameterSchemas[kind].parse({})).toEqual(Object.fromEntries(templateInfo[kind].fields.map(k=>[k,templateFields[k].default])))

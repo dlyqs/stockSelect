@@ -8,8 +8,8 @@ import { fmtCompact, fmtPct, fmtPrice, fmtSigned, fmtTimeET, upDownClass } from 
 import { Flash, RangeBar } from '../components/LiveBits'
 import { ErrorState, LoadingState } from '../components/PanelStates'
 
-export default function QuotePanel({ ticker }: { ticker: string }): JSX.Element {
-  const live = useLiveTick(ticker)
+export default function QuotePanel({ ticker, paper = false }: { ticker: string; paper?: boolean }): JSX.Element {
+  const live = useLiveTick(paper ? null : ticker)
   const [session, setSession] = useState(usSessionState())
   useEffect(() => {
     const id = window.setInterval(() => setSession(usSessionState()), 30_000)
@@ -17,13 +17,14 @@ export default function QuotePanel({ ticker }: { ticker: string }): JSX.Element 
   }, [])
 
   const quote = useQuery({
-    queryKey: ['quote', ticker],
-    queryFn: () => invoke<Quote>('quote:get', { symbol: ticker }),
+    queryKey: [paper ? 'paper-quote' : 'quote', ticker],
+    queryFn: () => invoke<Quote>(paper ? 'paper:quote' : 'quote:get', { symbol: ticker }),
     refetchInterval: session === 'open' ? 30_000 : 5 * 60_000,
     retry: 0
   })
   const metric = useQuery({
     queryKey: ['metric', ticker],
+    enabled: !paper,
     queryFn: () => invoke<Metric52w>('metric:get', { symbol: ticker }),
     staleTime: 24 * 3600_000,
     retry: 0

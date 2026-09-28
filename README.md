@@ -57,6 +57,8 @@ Intel Macs and other systems: see [Building from source](#building-from-source).
 
 ## First steps
 
+The app opens in the paper strategy workbench. See the [模拟策略工作台操作说明](docs/paper-trading-guide.md) for connection setup, instruments, strategy creation, and daily account management. The steps below cover the advanced terminal, available from the sidebar.
+
 1. **Start the app.** It asks for a Finnhub API key. You can paste one or skip; it won't
    ask again after you skip.
 2. **Try it without any key.** These work straight away. In `HELP` they carry a green

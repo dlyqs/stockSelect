@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { create } from 'zustand'
-export const pages = { overview: '总览', strategies: '策略', instruments: '标的池', compare: '绩效比较', data: '数据与核对', settings: '设置与备份', help: '帮助', create: '新建策略', detail: '策略详情' } as const
+import type { RunStatus } from '../../../shared/paper/types'
+export const pages = { overview: '总览', strategies: '策略', instruments: '标的池', compare: '绩效比较', data: '数据与核对', settings: '设置与备份', help: '使用说明', create: '新建策略', detail: '策略详情' } as const
 export type Page = keyof typeof pages
 export const draftSchema = z.object({ version: z.literal(1), requestId: z.string().uuid().optional(), step: z.number().int().min(0).max(3), template: z.string(), symbols: z.array(z.string()).max(10), parameters: z.record(z.string()), cash: z.string(), fee: z.string(), slippage: z.string(), position: z.string() }).strict()
 export type Draft = z.infer<typeof draftSchema>
@@ -8,9 +9,31 @@ export const emptyDraft: Draft = { version: 1, step: 0, template: '', symbols: [
 export function readDraft(raw: string | null): Draft {
   try { return draftSchema.parse(JSON.parse(raw ?? 'null')) } catch { return { ...emptyDraft, symbols: [], parameters: {} } }
 }
-export const useNavigation = create<{ page: Page; terminal: boolean; runId: string | null; navigate: (page: Page, runId?: string) => void; setTerminal: (value: boolean) => void }>(set => ({
-  page: 'overview', terminal: false, runId: null,
-  navigate: (page, runId) => set({ page, terminal: false, runId: runId ?? null }), setTerminal: terminal => set({ terminal })
+export type StrategyFilter = 'all' | 'active' | 'attention' | 'history' | RunStatus
+export const strategyFilters: Record<StrategyFilter, string> = {
+  all: '全部账户（含归档）', active: '运行 / 预热', attention: '需要查看（未归档）',
+  created: '待启动', warming: '预热中', running: '运行中', paused: '已暂停',
+  data_insufficient: '数据不足', error: '发生错误', ended: '已结束', archived: '已归档', history: '已结束 / 已归档',
+}
+interface NavigationState {
+  page: Page
+  terminal: boolean
+  runId: string | null
+  strategyFilter: StrategyFilter
+  strategySearch: string
+  navigate: (page: Page, runId?: string) => void
+  setTerminal: (value: boolean) => void
+  openStrategies: (filter?: StrategyFilter) => void
+  setStrategyFilter: (filter: StrategyFilter) => void
+  setStrategySearch: (search: string) => void
+}
+export const useNavigation = create<NavigationState>(set => ({
+  page: 'overview', terminal: false, runId: null, strategyFilter: 'all', strategySearch: '',
+  navigate: (page, runId) => set({ page, terminal: false, runId: runId ?? null }),
+  setTerminal: terminal => set({ terminal }),
+  openStrategies: (strategyFilter = 'all') => set({ page: 'strategies', terminal: false, runId: null, strategyFilter, strategySearch: '' }),
+  setStrategyFilter: strategyFilter => set({ strategyFilter }),
+  setStrategySearch: strategySearch => set({ strategySearch }),
 }))
 /** Exact decimal conversion, never multiply a binary floating point dollar value. */
 export function decimalUnits(raw: string, digits: number): number {

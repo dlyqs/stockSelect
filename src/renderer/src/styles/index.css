@@ -15,7 +15,8 @@ body,
   user-select: none;
 }
 
-* {
+/* Keep the classic terminal geometry isolated from the research workbench. */
+*:not(.workbench, .workbench *) {
   border-radius: 0 !important;
 }
 

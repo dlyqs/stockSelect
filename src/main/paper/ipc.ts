@@ -10,6 +10,9 @@ import { z } from 'zod'
 import type { PaperRuntime } from './runtime'
 import { PaperManagement } from './management'
 import { validateInstrument } from './instruments'
+import { searchInstruments } from './instrumentSearch'
+import { AlpacaProvider } from '../providers/alpaca'
+import { symbolSchema } from '../../shared/paper/schemas'
 import { history } from './queries'
 import { compare } from './performance'
 import { stageRestore } from './backup'
@@ -17,6 +20,9 @@ import type { Fill } from '../../shared/paper/types'
 import { actionSchema, type Valuation } from '../../shared/paper/management'
 export function registerPaperIpc(handle: (channel:string, handler:(payload:unknown)=>unknown)=>void, runtime:PaperRuntime|null, getKey:()=>string|null): { invalidateReadiness: () => void } {
   const readiness = new ReadinessChecker(getKey)
+  const quotes = new AlpacaProvider(getKey)
+  handle('paper:instruments:search', payload => searchInstruments(z.object({ query: z.string().trim().min(1).max(80) }).parse(payload).query))
+  handle('paper:quote', payload => quotes.getQuote(z.object({ symbol: symbolSchema }).parse(payload).symbol))
   const service=()=>{ if (!runtime) throw new Error('PAPER_STORAGE_UNAVAILABLE'); return runtime.service }
   const manager=()=>new PaperManagement(service(),symbol=>validateInstrument(symbol,getKey()))
   let restoring=false
