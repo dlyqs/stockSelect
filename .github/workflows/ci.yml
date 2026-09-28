@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Typecheck, lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  build:
+    # Installers for all three OSes — this is where macOS/Linux artifacts get
+    # built (they can't be cross-compiled from Windows dev machines).
+    # Artifacts stay UNSIGNED and the in-app updater stays disabled for them —
+    # unchanged policy until code signing is set up.
+    name: Build installers (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/generate-icon.js && node scripts/generate-sounds.js
+      - run: npm run dist -- --publish never
+        env:
+          # electron-builder wants a token when a publish config exists, even with --publish never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+
+  release:
+    # Attaches every installer to a GitHub Release for the tag, so people can
+    # download the app instead of building it. Runs only when all three OS
+    # builds succeeded — never a half-empty release. Notes come from
+    # docs/RELEASE-<version>.md when it exists.
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          path: installers
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="docs/RELEASE-${TAG#v}.md"
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          gh release create "$TAG" installers/* --title "OpenTerminal $TAG" --verify-tag "$@"
