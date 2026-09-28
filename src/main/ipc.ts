@@ -1,3 +1,4 @@
+import { createPaperRuntime, type PaperRuntime } from './paper/runtime'
 import { app, BrowserWindow, clipboard, dialog, ipcMain } from 'electron'
 import { logger } from './logger'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
@@ -169,6 +170,7 @@ function handle<T>(channel: string, fn: (payload: unknown, senderId: number) => 
 }
 
 export interface IpcServices {
+  paper: PaperRuntime | null
   stream: StreamManager
 }
 
@@ -901,5 +903,5 @@ export function registerIpc(
 
   handle('app:version', () => app.getVersion())
 
-  return { stream }
+  return { stream, paper: createPaperRuntime(() => keys.getKey('alpaca')) }
 }

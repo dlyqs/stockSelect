@@ -220,10 +220,14 @@ if (!gotLock) {
     createWindow()
 
     // Laptop sleep kills sockets and freezes timers; recover the moment we wake.
-    powerMonitor.on('suspend', () => console.log('[power] system suspend'))
+    powerMonitor.on('suspend', () => {
+      console.log('[power] system suspend')
+      services?.paper?.suspend()
+    })
     powerMonitor.on('resume', () => {
       console.log('[power] system resume — recycling stream + refreshing renderers')
       services?.stream.onSystemResume()
+      services?.paper?.resume()
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) win.webContents.send('system:resumed', Date.now())
       }
@@ -259,3 +263,17 @@ function reportCrash(kind: string, err: unknown): void {
 }
 process.on('uncaughtException', (err) => reportCrash('uncaughtException', err))
 process.on('unhandledRejection', (reason) => reportCrash('unhandledRejection', reason))
+
+// Drain the paper writer before Electron tears down workers; window visibility is unrelated.
+let paperClosed = false
+let paperClosing = false
+app.on('before-quit', event => {
+  quitting = true
+  if (paperClosed || !services?.paper) return
+  event.preventDefault()
+  if (paperClosing) return
+  paperClosing = true
+  void services.paper.shutdown().catch(() => logger.write('error',['[paper-store]',{ event: 'shutdown_failed' }])).finally(() => {
+    paperClosed = true; app.quit()
+  })
+})

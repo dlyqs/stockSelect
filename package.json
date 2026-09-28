@@ -1,7 +1,7 @@
 {
   "name": "openterminal",
   "version": "1.1.2",
-  "description": "OpenTerminal — keyboard-first, multi-panel market terminal (Bloomberg-style)",
+  "description": "OpenTerminal \u2014 keyboard-first, multi-panel market terminal (Bloomberg-style)",
   "main": "./out/main/index.js",
   "author": {
     "name": "Jamie van Riel",
@@ -20,9 +20,14 @@
     "lint": "eslint .",
     "test": "vitest run",
     "start": "electron-vite preview",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "paper:probe:sqlite": "ELECTRON_RUN_AS_NODE=1 electron scripts/paper-sqlite-probe.cjs",
+    "paper:probe:market": "node scripts/paper-market-probe.cjs",
+    "paper:rebuild:electron": "electron-builder install-app-deps",
+    "paper:rebuild:node": "npm rebuild better-sqlite3"
   },
   "dependencies": {
+    "better-sqlite3": "11.10.0",
     "dotenv": "^16.4.5",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
@@ -32,6 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tanstack/react-query": "^5.51.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.14.9",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -95,6 +101,9 @@
       ],
       "icon": "build/icon.png",
       "category": "Finance"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ]
   }
 }
